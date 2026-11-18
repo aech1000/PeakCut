@@ -1,9 +1,13 @@
-# PeakCut
+# Clipverse
+
+**WHERE STREAMS BECOME MOMENTS.**
+
+The app is branded as Clipverse. The existing `studio` Python package, `peakcut` install-folder examples and `PEAKCUT_*` environment variables are retained for compatibility with existing deployments.
 
 Turn long videos and live streams into captioned vertical clips, ready to post. Free and open source: run it on
 your own computer or server, with your own AI key.
 
-Paste a YouTube, Twitch or Kick link (or upload a file) and PeakCut finds the moments worth clipping, cuts them to
+Paste a YouTube, Twitch or Kick link (or upload a file) and Clipverse finds the moments worth clipping, cuts them to
 9:16, adds word-by-word captions and a hook, and can post them to your connected accounts. It can also record a
 creator's live stream and clip the highlights while the stream is still running.
 
@@ -24,9 +28,9 @@ creator's live stream and clip the highlights while the stream is still running.
 ## Quick start
 
 You need Python 3.10 or newer and `ffmpeg`. On Windows: `winget install Gyan.FFmpeg`. On a Mac: `brew install ffmpeg`.
-On Linux: `sudo apt install ffmpeg`. PeakCut finds it by itself and tells you in the dashboard if it is missing.
+On Linux: `sudo apt install ffmpeg`. Clipverse finds it by itself and tells you in the dashboard if it is missing.
 
-Put PeakCut in a short folder that stays put: `C:\peakcut` on Windows, `~/peakcut` on a Mac or Linux. Not inside a
+Put Clipverse in a short folder that stays put: `C:\peakcut` on Windows, `~/peakcut` on a Mac or Linux. Not inside a
 temporary folder or an AI assistant's workspace: those get cleaned up, and on Windows a folder that deep stops the
 speech model from loading (Windows can't open files whose full path is over 260 characters). If an AI assistant
 installs it for you, it should ask you where to put it first ([AGENTS.md](AGENTS.md) tells it to).
@@ -68,7 +72,7 @@ your AI service, paste your key and press **Save and test** (see [Choose your AI
 
 ## Choose your AI
 
-PeakCut needs a chat model that can return JSON. The easy way is in the dashboard: **Settings, AI**. Pick the
+Clipverse needs a chat model that can return JSON. The easy way is in the dashboard: **Settings, AI**. Pick the
 service, paste your key, press **Find models** to choose from the service's own list, then **Save and test**. The
 key is kept in the data folder on your machine and is never shown again.
 
@@ -117,7 +121,7 @@ Everything is set through environment variables, normally in a `.env` file next 
 
 This only matters with accounts switched on (`PEAKCUT_ACCOUNTS=1`); without them you are the owner and can do
 everything. An account is an admin only when the database says so. No email address is special in the code and no web request
-can change a role. Do it on the machine that runs PeakCut:
+can change a role. Do it on the machine that runs Clipverse:
 
 ```bash
 python -m studio.admin grant you@example.com
@@ -142,18 +146,18 @@ assistants.
 
 ## Where your videos and clips are kept
 
-Everything PeakCut keeps is in one folder: videos, clips, recordings, creators, settings and the speech model. By
-default it is the `data` folder inside PeakCut. **Settings, Storage** shows the folder and how much room its drive
-has, opens it in one click, and lets you move it to another drive: choose the new folder, and PeakCut moves
-everything there the next time it starts. If the drive is nearly full, PeakCut says so and stops taking new videos
+Everything Clipverse keeps is in one folder: videos, clips, recordings, creators, settings and the speech model. By
+default it is the `data` folder inside Clipverse. **Settings, Storage** shows the folder and how much room its drive
+has, opens it in one click, and lets you move it to another drive: choose the new folder, and Clipverse moves
+everything there the next time it starts. If the drive is nearly full, Clipverse says so and stops taking new videos
 until there is room. (`PEAKCUT_DATA` in `.env` still works and takes priority.)
 
 ## Updating
 
-PeakCut checks GitHub once a minute while it runs. When a newer version is out, the dashboard shows a notice
+Clipverse checks GitHub once a minute while it runs. When a newer version is out, the dashboard shows a notice
 within a minute or two (no restart needed), with what changed
 and how to update: ask your AI coding assistant to do it (the notice has a sentence to paste), or run
-`git pull && pip install -r requirements.txt` in the PeakCut folder and restart it (with Docker:
+`git pull && pip install -r requirements.txt` in the Clipverse folder and restart it (with Docker:
 `git pull && docker compose up -d --build`). Your `.env`, keys and clips are not touched. Only the two commit ids
 are sent to GitHub; set `PEAKCUT_UPDATE_CHECK=0` to turn the check off.
 
@@ -186,7 +190,7 @@ queue tests against it, then removes it. It needs no keys and never touches real
 
 ## Security
 
-- With sign-in off, PeakCut listens on this computer only (`127.0.0.1`), refuses changes sent by other websites,
+- With sign-in off, Clipverse listens on this computer only (`127.0.0.1`), refuses changes sent by other websites,
   and only answers to its own address. Do not expose it to the internet that way: turn accounts on.
 - Passwords are stored only as salted scrypt hashes. Sessions are random tokens stored hashed; cookies are HTTP-only.
 - Every route works out who is asking from the session, never from the request, so users only reach their own data.
