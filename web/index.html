@@ -1688,6 +1688,7 @@ function clipHtml(j, c) {
       <span class="badge l ${scoreCls(c.score)}" title="AI score">${c.score || "Hand"}</span><span class="badge r">${fmt(c.end - c.start)}</span></button>
     <div class="clip-body">
       <div class="hook">${esc(c.hook || "Untitled clip")}</div>
+      ${Number.isFinite(c.clipverse_score) ? `<div class="row" style="gap:4px"><span class="pill">Clipverse ${c.clipverse_score} · ${esc(c.clipverse_tier || "Scored")}</span></div>` : ""}
       <div class="ttl">${esc(c.title)}</div>
       ${postPills(c) ? `<div class="row" style="gap:4px">${postPills(c)}</div>` : ""}
       <div class="clip-foot">
@@ -2140,7 +2141,8 @@ function drawClipDlg(full) {
     dlg.innerHTML = `<div class="editor"><div class="stage" id="stage">${stage}</div>
       <div class="panel">
         <div class="job-head" style="margin:0"><div><span class="badge ${scoreCls(c.score)}" style="position:static">${c.judges ? "Words " + c.judges.words + (c.judges.reaction ? " · Reaction " + c.judges.reaction : "") : c.score ? "Score " + c.score : "Clipped by hand"}</span>
-          <p class="sub" style="margin-top:8px">${esc(c.reason || "")}</p></div><button class="btn icon ghost" data-act="closedlg" aria-label="Close">${ic("x")}</button></div>
+          <p class="sub" style="margin-top:8px">${esc(c.reason || "")}</p>
+          ${Number.isFinite(c.clipverse_score) ? `<h3>Clipverse score · ${c.clipverse_score}/100</h3><p class="sub">${esc(c.clipverse_tier || "")} · ${Object.entries(c.clipverse_breakdown || {}).map(([k,v]) => `${esc(k.replaceAll("_"," "))}: ${Number(v)}/100`).join(" · ")}</p>` : ""}</div><button class="btn icon ghost" data-act="closedlg" aria-label="Close">${ic("x")}</button></div>
         <h3>On the video</h3>
         <label class="f">Big text<input data-f="hook" value="${esc(c.hook)}"></label>
         <label class="sw"><input type="checkbox" data-f="captions" data-caption-toggle ${c.captions === false ? "" : "checked"}>Generate captions</label>
