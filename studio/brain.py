@@ -7,7 +7,7 @@ import time
 
 import numpy as np
 
-from . import ai, config, games, usage, roman
+from . import ai, config, games, usage, roman, scoring
 
 WINDOW_SEC, OVERLAP_SEC = 15 * 60, 60
 
@@ -307,9 +307,13 @@ def find_clips(words, db, duration, title="", uploader="", max_clips=6, min_len=
             continue
         if _overlaps(s, e, clips):
             continue  # overlaps a better clip
-        clips.append(_tidy(c, s, e, game))
+        tidy = _tidy(c, s, e, game)
+        tidy.update(scoring.score_clip(tidy, words, z, min_len=min_len, max_len=max_len))
+        clips.append(tidy)
         if len(clips) >= max_clips:
             break
+    for rank, clip in enumerate(sorted(clips, key=lambda c: -c.get("clipverse_score", 0)), 1):
+        clip["clipverse_rank"] = rank
     clips.sort(key=lambda c: c["start"])
     return clips, {"model": used_model, "tokens": tokens, "note": note}
 
