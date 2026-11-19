@@ -2149,7 +2149,8 @@ function drawClipDlg(full) {
           <p class="sub" style="margin-top:8px">${esc(c.reason || "")}</p>
           ${Number.isFinite(c.clipverse_score) ? `<h3>Clipverse score · ${c.clipverse_score}/100</h3><p class="sub">${esc(c.clipverse_tier || "")} · ${Object.entries(c.clipverse_breakdown || {}).map(([k,v]) => `${esc(k.replaceAll("_"," "))}: ${Number(v)}/100`).join(" · ")}</p>` : ""}</div><button class="btn icon ghost" data-act="closedlg" aria-label="Close">${ic("x")}</button></div>
         <h3>On the video</h3>
-        <label class="f">Big text<input data-f="hook" value="${esc(c.hook)}"></label>
+        ${c.hook_options?.length ? `<label class="f">AI hook suggestions<select data-hook-choice>${c.hook_options.map(h => `<option value="${esc(h.text)}" ${h.text === c.hook ? "selected" : ""}>${esc(h.text)} · ${h.score}/100</option>`).join("")}</select></label>` : ""}
+        <label class="f">Big text<input data-f="hook" value="${esc(c.hook)}" maxlength="60"></label>
         <label class="sw"><input type="checkbox" data-f="captions" data-caption-toggle ${c.captions === false ? "" : "checked"}>Generate captions</label>
         <div class="two"><label class="f">Caption style<select data-f="style" data-caption-style ${c.captions === false ? "disabled" : ""}>${opts(S.status.styles, c.style)}</select></label>
           <label class="f">Layout<select data-f="layout">${opts(S.status.layouts, c.layout)}</select></label></div>
@@ -2261,6 +2262,13 @@ document.addEventListener("change", async e => {
   if (!t.closest("#cform") || t.type !== "checkbox") return;
   if (t.dataset.k === "autopost" && t.checked && !await ask("Turn on auto-posting?", "Clips that score high enough will be posted to the ticked accounts without you seeing them first.", "Turn on")) { t.checked = false; return; }
   saveCreator(true);
+});
+
+document.addEventListener("change", e => {
+  if (e.target.matches("[data-hook-choice]")) {
+    const input = $('#clipdlg [data-f="hook"]');
+    if (input) input.value = e.target.value;
+  }
 });
 
 document.addEventListener("click", async e => {
