@@ -1249,7 +1249,7 @@ function moveInd() {
 }
 function drawShell() {  const nav = (v, icon, label, extra = "") => `<button class="nav-item ${S.view === v ? "on" : ""}" data-act="go" data-v="${esc(v)}" title="${esc(label)}">${icon}<span class="label">${esc(label)}</span>${extra}</button>`;
   put($("#nav"), nav("overview", navIc("home", "overview"), "Home") +
-    nav("library", navIc("film", "library"), "All videos", (() => { const w = S.jobs.filter(j => ["queued", "running"].includes(j.status)).length;
+    nav("library", navIc("film", "library"), "All videos", (() => { const w = S.jobs.filter(j => ["queued", "running", "cancelling"].includes(j.status)).length;
       return w ? `<span class="working" title="${w} working now"><i></i>${w} working</span>` : S.jobs.length ? `<span class="count">${S.jobs.length}</span>` : ""; })()) +
     `<h4><span>Creators</span></h4>` +
     S.creators.map(c => nav("c:" + c.id, cav(c), c.name,
@@ -1731,13 +1731,13 @@ function liveHtml(j) {
 }
 function jobHtml(j) {
   if (j.status === "live") return liveHtml(j);
-  const busy = j.status === "queued" || j.status === "running";
+  const busy = ["queued", "running", "cancelling"].includes(j.status);
   const who = !creatorId() && j.creator ? S.creators.find(c => c.id === j.creator)?.name : "";
   const meta = [who, j.uploader, j.duration ? fmt(j.duration) + " long" : "", j.clips.length ? j.clips.length + (j.clips.length === 1 ? " clip" : " clips") : "",
                 j.took ? "made in " + fmt(j.took) : "", j.kind === "live" ? "recording, " + j.stage.toLowerCase() : ""].filter(Boolean).map(esc).join(" · ");
   const pic = j.thumb ? `<img src="/media/${esc(j.id)}/thumb.jpg" alt="" loading="lazy">` : ic(j.source?.type === "file" ? "film" : "link");
   return `<div class="job-head"><div class="jt"><span class="jthumb">${pic}${j.duration ? `<span class="du">${fmt(j.duration)}</span>` : ""}</span><div style="min-width:0"><h3>${esc(j.title || j.source.name)}</h3><p class="sub">${meta}</p></div></div>
-      <div class="row" style="flex-wrap:nowrap;gap:4px">${busy ? "" : `
+      <div class="row" style="flex-wrap:nowrap;gap:4px">${busy ? (j.status === "cancelling" ? `<button class="btn sm danger" disabled>${ic("stop")}Cancelling…</button>` : `<button class="btn sm danger" data-act="canceljob" data-j="${j.id}">${ic("stop")}Cancel job</button>`) : `
         ${j.clips.some(c => c.status === "done") ? `<button class="btn sm icon ghost" data-act="dlall" data-j="${j.id}" title="Download all clips of this video" aria-label="Download all clips of this video">${ic("down")}</button>` : ""}
         <button class="btn sm icon ghost" data-act="deljob" data-j="${j.id}" title="Delete" aria-label="Delete this video and its clips">${ic("trash")}</button>
         <label class="selck" title="Select this video and its clips"><input type="checkbox" data-sel="j:${j.id}" ${sel().has("j:" + j.id) ? "checked" : ""} aria-label="Select this video"></label>`}</div></div>
@@ -2216,7 +2216,7 @@ document.addEventListener("visibilitychange", () => {
 });
 window.addEventListener("focus", () => { if (!document.hidden) tick(); });
 function loop() {
-  const active = S.jobs.some(j => ["queued", "running", "live"].includes(j.status) || j.clips.some(c => c.status === "queued" || c.status === "rendering"));
+  const active = S.jobs.some(j => ["queued", "running", "cancelling", "live"].includes(j.status) || j.clips.some(c => c.status === "queued" || c.status === "rendering"));
   // quick while something is being made, relaxed otherwise, and slow when the tab is in the background
   const waiting = S.creators.some(c => (c.channels && Object.keys(c.channels).length && !c.profile?.pic) || c.live_job && !jobOf(c.live_job));
   setTimeout(async () => { await tick(); loop(); }, document.hidden ? 20000 : waiting ? 1000 : active ? 2000 : 4000);
@@ -2379,6 +2379,11 @@ document.addEventListener("click", async e => {
       if (!typed) return;
       await send("/api/account/delete", {confirm: typed});
       location.href = "/"; return;
+    }
+    if (a === "canceljob") {
+      if (!await ask("Cancel this video job?", "Clipverse will stop processing this video at the next safe checkpoint. Completed clips will be kept; unfinished work will stop.", "Cancel job", true)) return;
+      await api(`/api/jobs/${d.j}/cancel`, {method:"POST"});
+      toast("Cancellation requested", "ok"); return tick();
     }
     if (a === "deljob") {
       if (!await ask("Delete this video?", "The video and all of its clips are permanently deleted. This cannot be undone.", "Delete", true)) return;

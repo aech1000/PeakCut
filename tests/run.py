@@ -53,6 +53,7 @@ def main() -> int:
                 ("AI services", ["tests/test_ai.py"]),
                 ("Clipverse AI scoring", ["tests/test_scoring.py"]),
                 ("creator clipping campaigns", ["tests/test_campaigns.py"]),
+                ("per-video job cancellation", ["tests/test_cancel.py"]),
                 ("no sign-in, and the AI key from the dashboard", ["tests/test_local.py"]),
                 ("Hindi and Urdu captions in Roman letters", ["tests/test_roman.py"]),
                 ("turning captions off and back on", ["tests/test_captions.py"]),

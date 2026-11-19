@@ -943,6 +943,17 @@ def rerender(jid: str, cid: str, body: dict = Body(...)):
     return jobs.public(job)
 
 
+@app.post("/api/jobs/{jid}/cancel")
+def cancel_job(jid: str):
+    job = _job_or_404(jid)
+    if job.get("kind") == "live" or jid in live.SESSIONS:
+        raise HTTPException(409, "Use the live recording's Stop button for live streams.")
+    result = jobs.cancel(jid)
+    if result is None:
+        raise HTTPException(404, "No such video")
+    return result
+
+
 @app.delete("/api/jobs/{jid}")
 def delete_job(jid: str):
     job = _job_or_404(jid)
