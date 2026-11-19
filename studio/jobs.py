@@ -613,13 +613,23 @@ def _run_job(job):
         from . import fetch_model
         _set(job, stage="Getting the speech model (one time, about 480 MB)")
         fetch_model.ensure()
-        _check_cancel(job)
+        check_cancel()
         _set(job, stage="Getting the audio")
     fetch = ThreadPoolExecutor(1)
+    renders = ahead = None
+    def check_cancel():
+        if not _cancelled(job):
+            return
+        if ahead is not None:
+            ahead.shutdown(wait=True, cancel_futures=True)
+        if renders is not None:
+            renders.shutdown(wait=True, cancel_futures=True)
+        fetch.shutdown(wait=False, cancel_futures=True)
+        raise JobCancelled("Cancelled by you")
     video = None
     if src["type"] == "url":
         meta = media.info(src["url"])
-        _check_cancel(job)
+        check_cancel()
         if meta["kind"] != "video":
             raise RuntimeError("That link is a channel or playlist, not a single video. Paste the link of one video.")
         if ((o["range_end"] or meta["duration"]) - (o["range_start"] or 0)) > config.MAX_VIDEO_HOURS * 3600:
@@ -636,25 +646,24 @@ def _run_job(job):
         if not pieces:  # shorter video: fetch all of it in the background while the audio is worked on
             video = fetch.submit(media.download, src["url"], d, int(o["quality"]))
         def audio_progress(p):
-            _check_cancel(job)
             _set(job, progress=0.03 + 0.1 * p)
         audio_file = media.download_audio(src["url"], d, audio_progress)
-        _check_cancel(job)
+        check_cancel()
     else:
         pieces, audio_file = False, Path(src["path"])
         info = media.probe(audio_file)
-        _check_cancel(job)
+        check_cancel()
         if info["duration"] > config.MAX_VIDEO_HOURS * 3600:
             raise RuntimeError(f"That video is longer than {config.MAX_VIDEO_HOURS:g} hours, which is the limit.")
         _set(job, source_path=str(audio_file), width=info["width"], height=info["height"], duration=info["duration"])
         if not job.get("thumb") and media.save_thumb(d, video=audio_file):
             _set(job, thumb=True)
     wav = d / "audio.wav"
-    _check_cancel(job)
+    check_cancel()
     media.extract_audio(audio_file, wav)
-    _check_cancel(job)
+    check_cancel()
     audio = media.load_audio(wav)
-    _check_cancel(job)
+    check_cancel()
     wav.unlink(missing_ok=True)
     if src["type"] == "url":
         audio_file.unlink(missing_ok=True)
@@ -697,7 +706,9 @@ def _run_job(job):
         began[clip["id"]] = time.time()
         if src["type"] == "url" and (pieces or not whole_video()):
             _fetch_piece(job, clip, audio)
-            _check_cancel(job)
+            if _cancelled(job):
+                clip.update(status="cancelled", error=None)
+                return
         if clip["status"] != "error" and clip.get("captions", True) and yt and yt[1].lower().startswith("en"):
             # The clip was found with YouTube's transcript. What is shown on screen comes from our own model,
             # run on just this clip: full punctuation, nothing blanked out, timings to the word.
@@ -755,7 +766,6 @@ def _run_job(job):
             last = [0.0]
 
             def tp(p, i=i, a_=a_, b_=b_):
-                _check_cancel(job)
                 if now_on[0] == i and p - last[0] > 0.05:      # only the part being shown moves the bar
                     last[0] = p
                     _set(job, progress=max(job["progress"], 0.14 + 0.78 * ((a_ - lo) + p * (b_ - a_)) / max(1, hi - lo)))
@@ -778,7 +788,7 @@ def _run_job(job):
             hear(bi)
             hear(bi + 1)
             bw = heard.pop(bi).result()
-        _check_cancel(job)
+        check_cancel()
         _set(job, progress=max(job["progress"], 0.14 + 0.78 * (b - lo) / max(1, hi - lo)))
         words += [dict(w, s=round(w["s"] + shift, 2), e=round(w["e"] + shift, 2)) for w in bw]
         (d / "words.json").write_text(json.dumps(words), encoding="utf-8")
@@ -790,11 +800,11 @@ def _run_job(job):
             continue
         quota = max(1, math.ceil(left / (len(blocks) - bi)))
         s0 = int((a - lo) / 16000)
-        _check_cancel(job)
+        check_cancel()
         found, ai = brain.find_clips(bw, db[s0: s0 + int((b - a) / 16000) + 1], (b - a) / 16000, job["title"],
                                      job["uploader"], quota, int(o["min_len"]), int(o["max_len"]), notes.append, game=game,
                                      campaign_rules=o.get("campaign_rules", ""), campaign_name=o.get("campaign_name", ""))
-        _check_cancel(job)
+        check_cancel()
         tokens += ai.get("tokens", 0)
         model = ai.get("model") or model
         if ai.get("note"):
@@ -829,7 +839,7 @@ def _run_job(job):
     if futures:
         _set(job, stage="Finishing the clips", progress=max(job["progress"], 0.92))
     _wait_for_clips(job, futures, began, renders._max_workers)
-    _check_cancel(job)
+    check_cancel()
     if exact:           # keep our own words for the clips in the saved transcript, so editing a clip later uses them
         for a_s, b_s, tw in exact.values():
             words = [w for w in words if not a_s <= w["s"] < b_s] + tw
@@ -839,7 +849,7 @@ def _run_job(job):
     ahead.shutdown(wait=False)
     fetch.shutdown(wait=False)
     del audio
-    _check_cancel(job)
+    check_cancel()
     clips = job["clips"]
     job["ai"] = {"model": model, "tokens": tokens, "log": notes[-5:],
                  "note": "The AI was unavailable, so clips were picked by loudness only." if clips and not model else ""}
