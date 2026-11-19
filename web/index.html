@@ -1857,6 +1857,11 @@ function drawCreatorForm() {
         <label class="f">Minimum gap between live clips (minutes)<input data-k="min_gap_min" type="number" min="0" max="60" value="${c.min_gap_min}"></label>
         <label class="f span">Always clip the last 30 seconds when someone says<input data-k="trigger_words" value="${esc(c.trigger_words)}" placeholder="clip that, clip it"><small class="sub" style="font-weight:400">Separate phrases with commas. Matched on the transcript, so it needs no AI call.</small></label>
       </div></div>
+    <div class="card"><h2>Clipping campaign</h2><p class="help">Paste the streamer's campaign brief here. These rules apply only to this creator and guide live and video clip selection, hooks, titles, descriptions and hashtags.</p>
+      <div class="fields">
+        <label class="f span">Campaign name<input data-k="campaign_name" maxlength="100" value="${esc(c.campaign_name || "")}" placeholder="e.g. November creator campaign"></label>
+        <label class="f span">Streamer rules<textarea data-k="campaign_rules" rows="9" maxlength="5000" placeholder="Paste the campaign instructions here…">${esc(c.campaign_rules || "")}</textarea><small class="sub" style="font-weight:400">Up to 5,000 characters. Clear restrictions are treated as requirements; preferences guide selection and wording. If the AI is unavailable, Clipverse won't use loudness-only fallback for this creator's campaign.</small></label>
+      </div></div>
     <div class="card"><h2>Clips</h2><p class="help">How this creator's clips look.</p>
       <div class="fields"><label class="sw span"><input type="checkbox" data-k="captions" data-caption-toggle ${c.captions === false ? "" : "checked"}>Generate captions</label>
         <label class="f">Caption style<select data-k="style" data-caption-style ${c.captions === false ? "disabled" : ""}>${opts(S.status.styles, c.style)}</select></label>

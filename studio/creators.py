@@ -17,7 +17,7 @@ _lock = threading.RLock()
 DEFAULTS = {"name": "", "channel": "", "style": "bounce", "layout": "blur", "captions": True, "min_len": 15, "max_len": 60,
             "max_clips": 6, "min_score": 80, "auto_watch": False, "buffer_min": 20, "live_per_hour": 4, "ai_every_min": 3, "ai_only_on_spike": True, "auto_jump_pct": 60,
             "plan": "free", "decide_mode": "both", "must_clip_min": 0, "min_gap_min": 2,
-            "game": "",
+            "game": "", "campaign_name": "", "campaign_rules": "",
             "trigger_words": "clip that, clip it",
             "autopost": False, "accounts": [], "post_min_score": 75, "post_gap_min": 45, "daily_cap": 6,
             "privacy": "public", "post_footer": "", "rate_per_1k": 0.0, "channels": {}}
@@ -68,6 +68,12 @@ def _clean(data: dict) -> dict:
             v = max(lo, min(hi, int(float(v))))
         elif k in ("auto_watch", "autopost", "ai_only_on_spike"):
             v = bool(v)
+        elif k == "campaign_name":
+            v = str(v).strip()[:100]
+        elif k == "campaign_rules":
+            v = str(v).replace("\r\n", "\n").replace("\r", "\n")
+            v = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", v)
+            v = "\n".join(line.rstrip() for line in v.splitlines()[:60]).strip()[:5000]
         elif k == "channels":
             v = {p: str(u).strip()[:300] for p, u in (v.items() if isinstance(v, dict) else []) if p in PLATFORMS and str(u).strip()}
         elif k == "accounts":

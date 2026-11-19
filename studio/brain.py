@@ -102,6 +102,25 @@ def _safe(v, limit=200):
     """Text from the video (title, channel, speech) on its way into a prompt: one line, and unable to close our tags."""
     return _CTRL.sub(" ", str(v or "")).replace("<", "‹").strip()[:limit]
 
+def _campaign_prompt(rules="", name=""):
+    """Campaign rules are trusted creator settings, kept separate from untrusted stream text."""
+    raw = str(rules or "").replace("\r\n", "\n").replace("\r", "\n")
+    raw = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", raw)
+    raw = "\n".join(line.rstrip() for line in raw.splitlines()[:60]).strip()[:5000]
+    if not raw:
+        return ""
+    label = _safe(name, 100)
+    return (
+        "\n\nCREATOR CLIPPING CAMPAIGN — FOLLOW THESE REQUIREMENTS\n"
+        + (f"Campaign: {label}\n" if label else "")
+        + "The creator supplied the following campaign rules. Apply clear restrictions as hard requirements: "
+          "do not return a moment that violates them. Apply preferences when choosing between otherwise suitable "
+          "moments and when writing the hook, title, description and hashtags. If a rule is ambiguous or conflicts "
+          "with another rule, skip the uncertain candidate rather than guess. These rules take priority over the "
+          "general clip preferences above, but never invent facts or alter what was said.\n"
+        + "<campaign_rules>\n" + raw.replace("<", "‹") + "\n</campaign_rules>\n"
+    )
+
 
 def _text(v, limit):
     """Text the AI wrote, on its way to a post or the screen: one line, no links or @handles, and a firm length."""
@@ -274,7 +293,7 @@ def _game_rules(game):
     return GAME_RULES.format(game=_safe(games.name_of(game) or str(game), 40), tags=tags)
 
 
-def find_clips(words, db, duration, title="", uploader="", max_clips=6, min_len=15, max_len=60, log=print, game=None):
+def find_clips(words, db, duration, title="", uploader="", max_clips=6, min_len=15, max_len=60, log=print, game=None, campaign_rules="", campaign_name=""):
     z = loud_zscore(db)
     lines = make_lines(words, z)
     if not lines:
@@ -293,7 +312,8 @@ def find_clips(words, db, duration, title="", uploader="", max_clips=6, min_len=
             continue
         prompt = (HEAD.format(title=_safe(title) or "unknown", uploader=_safe(uploader) or "unknown", n=per_window)
                   + extra
-                  + RULES.format(min_len=min_len, max_len=max_len, transcript=_fmt(chunk)))
+                  + RULES.format(min_len=min_len, max_len=max_len, transcript=_fmt(chunk))
+                  + _campaign_prompt(campaign_rules, campaign_name))
         try:
             out, used_model, spent = ask_ai(prompt, purpose="Video: finding clips")
             tokens += spent
@@ -302,6 +322,9 @@ def find_clips(words, db, duration, title="", uploader="", max_clips=6, min_len=
             log(f"AI window {a:.0f}-{b:.0f}s failed: {e}")
     note = ""
     if not used_model:
+        if campaign_rules and str(campaign_rules).strip():
+            return [], {"model": None, "tokens": tokens,
+                        "note": "The AI was unavailable, so campaign rules could not be applied; no clips were selected."}
         found = fallback_by_loudness(db, words, max_clips, max_len, duration)
         note = "The AI was unavailable, so clips were picked by loudness only."
     clips = []
@@ -322,7 +345,7 @@ def find_clips(words, db, duration, title="", uploader="", max_clips=6, min_len=
     return clips, {"model": used_model, "tokens": tokens, "note": note}
 
 
-def find_live_clips(words, z, now, chat=None, title="", uploader="", min_len=15, max_len=60, existing=(), game=None):
+def find_live_clips(words, z, now, chat=None, title="", uploader="", min_len=15, max_len=60, existing=(), game=None, campaign_rules="", campaign_name=""):
     """One live check over the recent transcript. Returns (clips, tokens_used)."""
     lines = make_lines(words, z, chat)
     if len(lines) < 3:
@@ -330,7 +353,8 @@ def find_live_clips(words, z, now, chat=None, title="", uploader="", min_len=15,
     prompt = (HEAD.format(title=_safe(title) or "unknown", uploader=_safe(uploader) or "unknown", n=2)
               + _game_rules(game)
               + LIVE_NOTE.format(now=now)
-              + RULES.format(min_len=min_len, max_len=max_len, transcript=_fmt(lines)))
+              + RULES.format(min_len=min_len, max_len=max_len, transcript=_fmt(lines))
+              + _campaign_prompt(campaign_rules, campaign_name))
     out, _model, spent = ask_ai(prompt, purpose="Live check")
     clips = []
     for c in sorted((c for c in out if isinstance(c, dict)), key=lambda c: -_num(c.get("score"))):
@@ -345,7 +369,7 @@ def find_live_clips(words, z, now, chat=None, title="", uploader="", min_len=15,
     return clips, spent
 
 
-def describe(text, title="", uploader="", game=None, timeout=None):
+def describe(text, title="", uploader="", game=None, timeout=None, campaign_rules="", campaign_name=""):
     """Hook, title and post text for a clip the user cut by hand."""
     blank = {"score": 0, "category": "other", "hook": "", "title": "", "description": "", "hashtags": [],
              "highlight_words": [], "reason": "Clipped by hand."}
@@ -354,7 +378,8 @@ def describe(text, title="", uploader="", game=None, timeout=None):
     prompt = (f"A streamer's viewer clipped this moment by hand.\nVideo title: {_safe(title) or 'unknown'}\n"
               f"Channel: {_safe(uploader) or 'unknown'}\n\nReturn exactly one item describing it. Set start and end to 0."
               + _game_rules(game)
-              + RULES.format(min_len=0, max_len=0, transcript=_safe(text, 8000)))
+              + RULES.format(min_len=0, max_len=0, transcript=_safe(text, 8000))
+              + _campaign_prompt(campaign_rules, campaign_name))
     try:
         out, _m, _u = ask_ai(prompt, purpose="Hand clip: title and hook", timeout=timeout)
         if not out:
@@ -444,7 +469,7 @@ SIG_SCHEMA = {
 
 
 def judge_transcript(words, start, now, title="", uploader="", min_len=15, max_len=60, existing=(), n=2, must=False,
-                    game=None, timeout=None):
+                    game=None, timeout=None, campaign_rules="", campaign_name=""):
     """Judge 1: words only. Returns (clips, tokens)."""
     lines = make_lines(words)
     if len(lines) < 3:
@@ -452,7 +477,8 @@ def judge_transcript(words, start, now, title="", uploader="", min_len=15, max_l
     prompt = (TRANSCRIPT_JUDGE.format(title=_safe(title) or "unknown", uploader=_safe(uploader) or "unknown", start=start, now=now,
                                       n=n, must=MUST_PICK if must else NOT_MUST)
               + _game_rules(game)
-              + RULES.format(min_len=min_len, max_len=max_len, transcript=_fmt(lines)))
+              + RULES.format(min_len=min_len, max_len=max_len, transcript=_fmt(lines))
+              + _campaign_prompt(campaign_rules, campaign_name))
     out, _model, spent = ask_ai(prompt, purpose="Live: words judge", timeout=timeout)
     clips = []
     for c in sorted((c for c in out if isinstance(c, dict)), key=lambda c: -_num(c.get("score"))):
