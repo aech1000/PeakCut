@@ -21,6 +21,13 @@ SCHEMA = {
             "score": {"type": "INTEGER"},
             "category": {"type": "STRING"},
             "hook": {"type": "STRING"},
+            "hook_options": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
+                "text": {"type": "STRING"},
+                "curiosity": {"type": "INTEGER"},
+                "clarity": {"type": "INTEGER"},
+                "relevance": {"type": "INTEGER"},
+                "accuracy": {"type": "INTEGER"},
+            }, "required": ["text", "curiosity", "clarity", "relevance", "accuracy"]}},
             "title": {"type": "STRING"},
             "description": {"type": "STRING"},
             "hashtags": {"type": "ARRAY", "items": {"type": "STRING"}},
@@ -57,7 +64,10 @@ Rules:
 - Do not pick intros, sponsor reads, "like and subscribe", or dead air.
 - Skip weak moments. Fewer strong clips beat many weak ones. Return [] if nothing is worth clipping.
 - score: 0-100, how likely a stranger keeps watching. Be honest; most clips are 50-80.
-- hook: at most 5 words, ALL CAPS, shown as big text on the video. Curiosity, but true to what happens.
+- hook: create 3 to 5 distinct hook_options, each at most 5 words, ALL CAPS, for the opening on-screen text.
+  Try different truthful angles (curiosity, stakes, reaction, or payoff); avoid generic phrases and do not reveal every payoff.
+  For each option, rate curiosity, clarity, relevance and accuracy from 0 to 100. Accuracy means fully supported by this clip;
+  do not give a high accuracy score to an inference. Keep the legacy hook field as your single best option.
 - title: at most 70 characters. Write one specific, compelling title that makes sense to someone who has never seen the stream.
 - Lead with the most distinctive action, reaction, twist or outcome in the clip; use concrete details from the transcript rather than generic hype.
 - Create curiosity without lying or exaggerating. Never invent stakes, outcomes, quotes, emotions or events that are not supported by the clip.
@@ -141,9 +151,37 @@ def _fmt(lines):
                      for l in lines)
 
 
+def rank_hook_options(options, fallback=""):
+    """Sanitise and rank AI hook variants; factual accuracy is weighted most heavily."""
+    ranked, seen = [], set()
+    for option in options if isinstance(options, list) else []:
+        if not isinstance(option, dict):
+            continue
+        text = roman.to_roman(_text(option.get("text"), 60)).upper()
+        words = text.split()
+        key = text.casefold()
+        if not text or len(words) > 5 or key in seen:
+            continue
+        seen.add(key)
+        scores = {k: max(0, min(100, int(_num(option.get(k))))) for k in
+                  ("curiosity", "clarity", "relevance", "accuracy")}
+        score = round(scores["curiosity"] * .25 + scores["clarity"] * .20
+                      + scores["relevance"] * .20 + scores["accuracy"] * .35)
+        ranked.append({"text": text, **scores, "score": score})
+    ranked.sort(key=lambda item: (item["score"], item["accuracy"], item["clarity"]), reverse=True)
+    if not ranked and fallback:
+        text = roman.to_roman(_text(fallback, 60)).upper()
+        if text:
+            ranked = [{"text": text, "curiosity": 50, "clarity": 50, "relevance": 50,
+                       "accuracy": 50, "score": 50}]
+    return ranked[:5]
+
+
 def _tidy(c, s, e, game=None):
     """Whatever the AI answered, only this shape ever leaves here: clamped numbers, short link-free text."""
     cat = str(c.get("category", "other")).lower()
+    hook_options = rank_hook_options(c.get("hook_options"), c.get("hook"))
+    selected_hook = hook_options[0]["text"] if hook_options else roman.to_roman(_text(c.get("hook"), 60)).upper()
     tags = c.get("hashtags") if isinstance(c.get("hashtags"), list) else []
     tags = [re.sub(r"\W", "", str(h))[:30] for h in tags if isinstance(h, (str, int))]
     # The tags of the game are put on every post, whatever the AI wrote: people search for the game.
@@ -155,7 +193,8 @@ def _tidy(c, s, e, game=None):
     return {
         "start": s, "end": e, "score": max(0, min(100, int(_num(c.get("score"))))),
         "category": cat if cat in CATEGORIES else "other",
-        "hook": roman.to_roman(_text(c.get("hook"), 60)).upper(), "title": roman.to_roman(_text(c.get("title"), 100)),
+        "hook": selected_hook, "hook_options": hook_options, "hook_score": hook_options[0]["score"] if hook_options else 0,
+        "title": roman.to_roman(_text(c.get("title"), 100)),
         "description": roman.to_roman(_text(c.get("description"), 300)),
         "hashtags": [t for t in tags if t][:8],
         "highlight_words": [roman.to_roman(_text(h, 30)) for h in words][:8],
