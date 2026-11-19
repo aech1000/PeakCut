@@ -103,6 +103,7 @@ class _FairQueue:
 _q = _FairQueue()
 _live_q: "queue.Queue" = queue.Queue()   # live clips never wait behind a long video
 _jobs: dict = {}
+_cancel_events: dict = {}
 _by_user: dict = {}                       # user -> {job id: job}: listing one person's videos never scans everyone's
 _lock = threading.RLock()
 on_clip_ready: list = []   # callbacks (job, clip), run once when a clip first finishes
@@ -152,6 +153,8 @@ HIDDEN = ("dir", "user", "source_path", "recover")
 def public(job) -> dict:
     """What the browser may see: no server paths, no owner id."""
     out = {k: v for k, v in job.items() if k not in HIDDEN}
+    if job.get("cancel_requested") and job.get("status") in ("queued", "running"):
+        out["status"], out["stage"] = "cancelling", "Cancelling…"
     out["source"] = {k: v for k, v in job["source"].items() if k != "path"}
     out["clips"] = [{k: v for k, v in c.items() if k not in ("src", "fixed_words", "fixed_for")} for c in job["clips"]]
     ai = job.get("ai") or {}
@@ -187,6 +190,35 @@ def _set(job, **kw):
     with _lock:
         job.update(kw)
     save(job)
+
+
+class JobCancelled(Exception):
+    """Raised at safe checkpoints when one video job has been cancelled."""
+
+
+def _cancelled(job):
+    return bool(job.get("cancel_requested")) or _cancel_events.get(job["id"], threading.Event()).is_set()
+
+
+def _check_cancel(job):
+    if _cancelled(job):
+        raise JobCancelled("Cancelled by you")
+
+
+def cancel(jid):
+    """Request cancellation of this user's VOD only. Completed clips and job files are retained."""
+    job = get(jid)
+    if not job or job.get("kind") == "live":
+        return None
+    with _lock:
+        if job.get("status") in ("done", "error", "cancelled"):
+            return public(job)
+        _cancel_events.setdefault(jid, threading.Event()).set()
+        job["cancel_requested"] = True
+        if job.get("status") == "queued":
+            job.update(status="cancelled", stage="Cancelled")
+    save(job)
+    return public(job)
 
 
 def _remap(path, folder: Path):
@@ -233,6 +265,7 @@ def _load_file(f: Path, uid: str):
             else:
                 c.update(status="error", error="Interrupted by a restart. Open it and press Save and re-make.")
     _jobs[job["id"]] = job
+    _cancel_events[job["id"]] = threading.Event()
     _by_user.setdefault(uid, {})[job["id"]] = job
 
 
@@ -301,6 +334,7 @@ def create(source: dict, options: dict, enqueue=True, creator=None, kind="video"
     d.mkdir(parents=True)
     with _lock:
         _jobs[jid] = job
+        _cancel_events[jid] = threading.Event()
         _by_user.setdefault(job["user"], {})[jid] = job
     save(job)
     if enqueue:
@@ -338,6 +372,7 @@ def delete(jid):
         if job:
             _by_user.get(job["user"], {}).pop(jid, None)
     if job:
+        _cancel_events.pop(jid, None)
         ctx.bump(job["user"])
         shutil.rmtree(job["dir"], ignore_errors=True)
     return bool(job)
@@ -392,6 +427,8 @@ def render_one(job, clip, words):
             clip.setdefault("made_at", time.time())
             creators.log(job["creator"], f"Clip ready (score {clip['score']}): {clip['title'] or clip['hook']}")
             save(job)
+            if _cancelled(job):
+                return
             for fn in on_clip_ready:
                 try:
                     fn(job, clip)
@@ -545,6 +582,7 @@ def _facecam(job) -> list | None:
 
 
 def _run_job(job):
+    _check_cancel(job)
     import math
     from concurrent.futures import ThreadPoolExecutor
     d = Path(job["dir"])
@@ -575,11 +613,13 @@ def _run_job(job):
         from . import fetch_model
         _set(job, stage="Getting the speech model (one time, about 480 MB)")
         fetch_model.ensure()
+        _check_cancel(job)
         _set(job, stage="Getting the audio")
     fetch = ThreadPoolExecutor(1)
     video = None
     if src["type"] == "url":
         meta = media.info(src["url"])
+        _check_cancel(job)
         if meta["kind"] != "video":
             raise RuntimeError("That link is a channel or playlist, not a single video. Paste the link of one video.")
         if ((o["range_end"] or meta["duration"]) - (o["range_start"] or 0)) > config.MAX_VIDEO_HOURS * 3600:
@@ -595,18 +635,26 @@ def _run_job(job):
         pieces = span > LONG_VIDEO or meta["duration"] <= 0
         if not pieces:  # shorter video: fetch all of it in the background while the audio is worked on
             video = fetch.submit(media.download, src["url"], d, int(o["quality"]))
-        audio_file = media.download_audio(src["url"], d, lambda p: _set(job, progress=0.03 + 0.1 * p))
+        def audio_progress(p):
+            _check_cancel(job)
+            _set(job, progress=0.03 + 0.1 * p)
+        audio_file = media.download_audio(src["url"], d, audio_progress)
+        _check_cancel(job)
     else:
         pieces, audio_file = False, Path(src["path"])
         info = media.probe(audio_file)
+        _check_cancel(job)
         if info["duration"] > config.MAX_VIDEO_HOURS * 3600:
             raise RuntimeError(f"That video is longer than {config.MAX_VIDEO_HOURS:g} hours, which is the limit.")
         _set(job, source_path=str(audio_file), width=info["width"], height=info["height"], duration=info["duration"])
         if not job.get("thumb") and media.save_thumb(d, video=audio_file):
             _set(job, thumb=True)
     wav = d / "audio.wav"
+    _check_cancel(job)
     media.extract_audio(audio_file, wav)
+    _check_cancel(job)
     audio = media.load_audio(wav)
+    _check_cancel(job)
     wav.unlink(missing_ok=True)
     if src["type"] == "url":
         audio_file.unlink(missing_ok=True)
@@ -643,9 +691,13 @@ def _run_job(job):
     began = {}      # clip id -> when work on it started
 
     def make(clip, words_now):
+        if _cancelled(job):
+            clip.update(status="cancelled", error=None)
+            return
         began[clip["id"]] = time.time()
         if src["type"] == "url" and (pieces or not whole_video()):
             _fetch_piece(job, clip, audio)
+            _check_cancel(job)
         if clip["status"] != "error" and clip.get("captions", True) and yt and yt[1].lower().startswith("en"):
             # The clip was found with YouTube's transcript. What is shown on screen comes from our own model,
             # run on just this clip: full punctuation, nothing blanked out, timings to the word.
@@ -703,6 +755,7 @@ def _run_job(job):
             last = [0.0]
 
             def tp(p, i=i, a_=a_, b_=b_):
+                _check_cancel(job)
                 if now_on[0] == i and p - last[0] > 0.05:      # only the part being shown moves the bar
                     last[0] = p
                     _set(job, progress=max(job["progress"], 0.14 + 0.78 * ((a_ - lo) + p * (b_ - a_)) / max(1, hi - lo)))
@@ -725,6 +778,7 @@ def _run_job(job):
             hear(bi)
             hear(bi + 1)
             bw = heard.pop(bi).result()
+        _check_cancel(job)
         _set(job, progress=max(job["progress"], 0.14 + 0.78 * (b - lo) / max(1, hi - lo)))
         words += [dict(w, s=round(w["s"] + shift, 2), e=round(w["e"] + shift, 2)) for w in bw]
         (d / "words.json").write_text(json.dumps(words), encoding="utf-8")
@@ -736,9 +790,11 @@ def _run_job(job):
             continue
         quota = max(1, math.ceil(left / (len(blocks) - bi)))
         s0 = int((a - lo) / 16000)
+        _check_cancel(job)
         found, ai = brain.find_clips(bw, db[s0: s0 + int((b - a) / 16000) + 1], (b - a) / 16000, job["title"],
                                      job["uploader"], quota, int(o["min_len"]), int(o["max_len"]), notes.append, game=game,
                                      campaign_rules=o.get("campaign_rules", ""), campaign_name=o.get("campaign_name", ""))
+        _check_cancel(job)
         tokens += ai.get("tokens", 0)
         model = ai.get("model") or model
         if ai.get("note"):
@@ -773,6 +829,7 @@ def _run_job(job):
     if futures:
         _set(job, stage="Finishing the clips", progress=max(job["progress"], 0.92))
     _wait_for_clips(job, futures, began, renders._max_workers)
+    _check_cancel(job)
     if exact:           # keep our own words for the clips in the saved transcript, so editing a clip later uses them
         for a_s, b_s, tw in exact.values():
             words = [w for w in words if not a_s <= w["s"] < b_s] + tw
@@ -782,6 +839,7 @@ def _run_job(job):
     ahead.shutdown(wait=False)
     fetch.shutdown(wait=False)
     del audio
+    _check_cancel(job)
     clips = job["clips"]
     job["ai"] = {"model": model, "tokens": tokens, "log": notes[-5:],
                  "note": "The AI was unavailable, so clips were picked by loudness only." if clips and not model else ""}
@@ -821,6 +879,12 @@ def _worker(quick_only=False):
                 if clip.get("captions", True):
                     words = json.loads((Path(job["dir"]) / "words.json").read_text(encoding="utf-8"))
                 render_one(job, clip, words)
+        except JobCancelled:
+            for c in job.get("clips", []):
+                if c.get("status") in ("queued", "rendering"):
+                    c.update(status="cancelled", error=None)
+            _set(job, status="cancelled", cancel_requested=True, stage="Cancelled", error=None)
+            creators.log(job.get("creator"), f"Video cancelled: {job.get('title') or job.get('source', {}).get('name', '')}")
         except Exception as e:  # noqa: BLE001
             (Path(job["dir"]) / "error.log").write_text(traceback.format_exc(), encoding="utf-8")
             if kind == "job":
