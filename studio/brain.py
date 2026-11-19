@@ -58,8 +58,12 @@ Rules:
 - Skip weak moments. Fewer strong clips beat many weak ones. Return [] if nothing is worth clipping.
 - score: 0-100, how likely a stranger keeps watching. Be honest; most clips are 50-80.
 - hook: at most 5 words, ALL CAPS, shown as big text on the video. Curiosity, but true to what happens.
-- title: at most 70 characters, for the post.
-- description: one or two sentences.
+- title: at most 70 characters. Write one specific, compelling title that makes sense to someone who has never seen the stream.
+- Lead with the most distinctive action, reaction, twist or outcome in the clip; use concrete details from the transcript rather than generic hype.
+- Create curiosity without lying or exaggerating. Never invent stakes, outcomes, quotes, emotions or events that are not supported by the clip.
+- Avoid generic clickbait such as "You Won't Believe This", "Insane Moment" or "Craziest Clip Ever" unless the words are genuinely specific to the moment. Do not use ALL CAPS, emoji, hashtags, keyword stuffing or a call to action in the title.
+- Use natural, clear English that an international gaming audience can understand. Name the game when it is known and relevant; do not force it into unrelated moments.
+- description: one or two concise sentences. Explain the moment and its payoff in plain language; add the game or stream context when useful. Do not repeat the title or add filler, unsupported claims or calls to action.
 - hashtags: 5 tags without the # sign.
 - highlight_words: 3 to 6 single words spoken in the clip that carry the punch.
 - Write hook, title, description, hashtags and highlight_words in English. If the video is in Hindi or Urdu,
