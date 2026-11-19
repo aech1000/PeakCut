@@ -707,9 +707,9 @@ def _run_job(job):
         began[clip["id"]] = time.time()
         if src["type"] == "url" and (pieces or not whole_video()):
             _fetch_piece(job, clip, audio)
-            if _cancelled(job):
-                clip.update(status="cancelled", error=None)
-                return
+        if _cancelled(job):
+            clip.update(status="cancelled", error=None)
+            return
         if clip["status"] != "error" and clip.get("captions", True) and yt and yt[1].lower().startswith("en"):
             # The clip was found with YouTube's transcript. What is shown on screen comes from our own model,
             # run on just this clip: full punctuation, nothing blanked out, timings to the word.
@@ -721,6 +721,9 @@ def _run_job(job):
             if len(tw) >= 3:
                 exact[clip["id"]] = (a0 / 16000, b0 / 16000, tw)
                 words_now = tw
+        if _cancelled(job):
+            clip.update(status="cancelled", error=None)
+            return
         if clip["status"] != "error":
             render_one(job, clip, words_now)
 
