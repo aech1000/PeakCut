@@ -646,6 +646,7 @@ def _run_job(job):
         if not pieces:  # shorter video: fetch all of it in the background while the audio is worked on
             video = fetch.submit(media.download, src["url"], d, int(o["quality"]))
         def audio_progress(p):
+            check_cancel()
             _set(job, progress=0.03 + 0.1 * p)
         audio_file = media.download_audio(src["url"], d, audio_progress)
         check_cancel()
