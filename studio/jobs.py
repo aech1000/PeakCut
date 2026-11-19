@@ -624,7 +624,7 @@ def _run_job(job):
             ahead.shutdown(wait=True, cancel_futures=True)
         if renders is not None:
             renders.shutdown(wait=True, cancel_futures=True)
-        fetch.shutdown(wait=False, cancel_futures=True)
+        fetch.shutdown(wait=True, cancel_futures=True)
         raise JobCancelled("Cancelled by you")
     video = None
     if src["type"] == "url":
