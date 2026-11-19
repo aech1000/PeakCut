@@ -613,7 +613,7 @@ def _run_job(job):
         from . import fetch_model
         _set(job, stage="Getting the speech model (one time, about 480 MB)")
         fetch_model.ensure()
-        check_cancel()
+        _check_cancel(job)
         _set(job, stage="Getting the audio")
     fetch = ThreadPoolExecutor(1)
     renders = ahead = None
