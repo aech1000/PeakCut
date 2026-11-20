@@ -29,6 +29,11 @@ class HookOptionTests(unittest.TestCase):
         self.assertEqual(ranked[0]["text"], "WAIT FOR IT")
         self.assertEqual(ranked[0]["score"], 50)
 
+    def test_legacy_fallback_obeys_five_word_limit(self):
+        self.assertEqual(rank_hook_options([], "THIS HOOK HAS SIX WORDS TODAY"), [])
+        ranked = rank_hook_options([], "ONE LAST SHOT RIGHT NOW")
+        self.assertEqual(ranked[0]["text"], "ONE LAST SHOT RIGHT NOW")
+
     def test_only_five_options_are_exposed(self):
         options = [
             {"text": f"HOOK {i}", "curiosity": 50, "clarity": 50, "relevance": 50, "accuracy": 50}
