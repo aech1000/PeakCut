@@ -171,7 +171,7 @@ def rank_hook_options(options, fallback=""):
     ranked.sort(key=lambda item: (item["score"], item["accuracy"], item["clarity"]), reverse=True)
     if not ranked and fallback:
         text = roman.to_roman(_text(fallback, 60)).upper()
-        if text:
+        if text and len(text.split()) <= 5:
             ranked = [{"text": text, "curiosity": 50, "clarity": 50, "relevance": 50,
                        "accuracy": 50, "score": 50}]
     return ranked[:5]
